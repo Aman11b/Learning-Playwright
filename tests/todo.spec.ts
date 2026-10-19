@@ -66,3 +66,23 @@ test("User can complete a specific todo ietm", async ({ page }) => {
     playwrightTodo.getByTestId("todo-item-toggle"),
   ).not.toBeChecked();
 });
+
+test("User can locate todos by position", async ({ page }) => {
+  await page.goto("/");
+  const todoInput = page.getByRole("textbox");
+
+  const todos = ["Learn Playwright", "Learn Typescript", "Practive testing"];
+
+  for (const todo of todos) {
+    await todoInput.fill(todo);
+    await todoInput.press("Enter");
+  }
+
+  const labels = page.getByTestId("todo-item-label");
+
+  await expect(labels).toHaveCount(3);
+
+  await expect(labels.first()).toHaveText("Learn Playwright");
+  await expect(labels.nth(1)).toHaveText("Learn Typescript");
+  await expect(labels.last()).toHaveText("Practive testing");
+});
