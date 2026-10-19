@@ -86,3 +86,32 @@ test("User can locate todos by position", async ({ page }) => {
   await expect(labels.nth(1)).toHaveText("Learn Typescript");
   await expect(labels.last()).toHaveText("Practive testing");
 });
+
+test("User can target a checkbox inside a specific todo item", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  const todoInput = page.getByRole("textbox");
+
+  const todos = ["Learn Playwright", "Learn TypeScript", "Practice testing"];
+
+  for (const todo of todos) {
+    await todoInput.fill(todo);
+    await todoInput.press("Enter");
+  }
+
+  //Match a todo item that contains a matching descendant element.
+  const typescriptTodo = page.getByTestId("todo-item").filter({
+    has: page.getByText("Learn TypeScript", { exact: true }),
+  });
+
+  await expect(typescriptTodo).toHaveCount(1);
+
+  const checkbox = typescriptTodo.getByTestId("todo-item-toggle");
+
+  await checkbox.check();
+
+  await expect(checkbox).toBeChecked();
+  await expect(typescriptTodo).toHaveClass(/completed/);
+});
