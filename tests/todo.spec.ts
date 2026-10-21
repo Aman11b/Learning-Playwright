@@ -1,4 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
+import { count } from "node:console";
+import { Await } from "react-router-dom";
 
 // { page } extracts the page fixture from Playwright's test context. Playwright manages the browser context and page lifecycle for you.
 
@@ -251,6 +253,175 @@ test.describe("Todo app",()=>{
 
   })
 
+  test.describe("Click",()=>{
+    test("click deletes a todo and 'Clear completed' removed finished ones",async({page})=>{
+      await addTodos(page,TODO_ITEMS)
+
+      const items=page.getByTestId("todo-item")
+      const labels=page.getByTestId("todo-item-label")
+
+      const typescriptTodo=items.filter({hasText:TODO_ITEMS[1]})
+      await typescriptTodo.hover()
+      await typescriptTodo.getByTestId("todo-item-button").click()
+
+
+      await expect(labels).toHaveText([TODO_ITEMS[0],TODO_ITEMS[2]])
+
+
+      await items.first().getByTestId("todo-item-toggle").check()
+      await page.getByRole("button",{
+        name:"Clear completed"
+      }).click()
+
+      await expect(labels).toHaveText([TODO_ITEMS[2]])
+    })
+  })
+  // It’s not the same as calling click() twice, because a real double-click also sets the click count to 2, which is what onDoubleClick handlers listen for.
+
+  test.describe("Double-click",()=>{
+    test("double-clicking a label lets the user edit the todo",async({page})=>{
+      await addTodos(page,TODO_ITEMS);
+
+      const labels=page.getByTestId("todo-item-label");
+
+      const secondTodo=page.getByTestId("todo-item").nth(1);
+      const editInput=secondTodo.getByRole("textbox")
+
+      await expect(editInput).toHaveCount(0)
+
+      await secondTodo.getByTestId("todo-item-label").dblclick()
+
+
+      await expect(editInput).toBeVisible()
+      await expect(editInput).toHaveValue(TODO_ITEMS[1])
+      await expect(editInput).toBeFocused()
+
+      await editInput.fill("Learn TypeScript deeply")
+      await editInput.press("Enter")
+
+
+      await expect(editInput).toHaveCount(0);
+      await expect(labels).toHaveText([
+        TODO_ITEMS[0],
+        "Learn TypeScript deeply",
+        TODO_ITEMS[2]
+      ])
+    })
+  })
+
+  // locator.press("Key") focuses the element and presses a key.
+  // locator.pressSequentially("text") types one character at a time, firing keydown, keypress and keyup for each one. { delay: 50 } adds a pause between keys.
+  // Use pressSequentially() only when the app reacts to individual keystrokes, such as autocomplete, live search, or input masks.
+  // page.keyboard.press(...) sends keys to whatever currently has focus, without naming an element. Prefer locator.press() when you know the target.
+
+  test.describe("Keyboard",()=>{
+    test("Tab cancels an edit, and pressSquentially types key by key",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+
+      const labels=page.getByTestId("todo-item-label")
+      const secondTodo=page.getByTestId("todo-item").nth(1)
+      const editInput=secondTodo.getByRole("textbox")
+
+      await secondTodo.getByTestId("todo-item-label").dblclick()
+      await editInput.fill("This edot will be discarded");
+
+      await editInput.press("Tab")
+
+      await expect(editInput).toHaveCount(0);
+      await expect(labels).toHaveText(TODO_ITEMS)
+
+      const todoInput=page.getByTestId("header").getByRole("textbox")
+      await todoInput.pressSequentially("Typed key by key",{delay:50})
+      await expect(todoInput).toHaveValue("Typed key by key");
+
+
+      await todoInput.press("Enter")
+      await expect(labels).toHaveText([...TODO_ITEMS,"Typed key by key"])
+      
+    })
+  })
+
+
+  // clear() empties an input or textarea.
+  //  It’s equivalent to fill(""), but it reads better because it says what you mean.
+  // It waits for the element to be visible, enabled and editable, then focuses it and empties it. Calling it on something that isn’t editable (a button, a disabled input) fails with a clear error.
+
+
+  test.describe("Clear",()=>{
+    test("clear empties input, and enter on an empty value does nothing",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+      
+      const labels=page.getByTestId("todo-item-label")
+      const todoInput=page.getByTestId("header").getByRole("textbox")
+
+      await todoInput.fill("A draft I changed my mind about")
+      await expect(todoInput).toHaveValue("A draft I changed my mind about")
+
+      await todoInput.clear()
+      await expect(todoInput).toBeEmpty()
+
+      await todoInput.press("Enter")
+      await expect(labels).toHaveText(TODO_ITEMS)
+
+      const secondTodo=page.getByTestId("todo-item").nth(1)
+      const editInput=secondTodo.getByRole("textbox")
+
+      await secondTodo.getByTestId("todo-item-label").dblclick()
+      await editInput.clear()
+      await expect(editInput).toHaveValue("")
+
+      await editInput.press("Enter")
+      await expect(editInput).toBeVisible()
+
+      await editInput.press("Tab");
+      await expect(editInput).toHaveCount(0)
+      await expect(labels).toHaveText(TODO_ITEMS)
+
+    })
+  })
+
+  // uncheck() is the opposite of check(). It clicks only if the box is currently checked, then verifies it ended up unchecked.
+  // setChecked(true | false) does either one, depending on a boolean. It’s useful when the desired state comes from a variable or test data.
+  // All three are idempotent: if the box is already in the requested state, they do nothing and don’t click. Calling uncheck() on an unchecked box passes silently.
+  // They work on radio buttons too, but uncheck() fails on a radio, since a radio can’t be unchecked by clicking it.
+  // The app marks completed rows with a completed class, so page.locator("li.completed") is a handy way to count them.
+
+  test.describe("Uncheck and setChecked",()=>{
+    test("toggle-all compltes everything anf follors individual todos",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+
+      const toggleAll=page.getByTestId("toggle-all")
+      const firstToggle=page.getByTestId("todo-item-toggle").first()
+      const counter=page.getByTestId("footer").getByText(/left!/);
+      const completed=page.locator("li.completed")
+
+      await toggleAll.check()
+      await expect(completed).toHaveCount(3)
+      await expect(counter).toHaveText("0 items left!")
+
+      await firstToggle.uncheck()
+      await expect(firstToggle).not.toBeChecked()
+      await expect(completed).toHaveCount(2)
+      await expect(toggleAll).not.toBeChecked()
+      await expect(counter).toHaveText("1 item left!")
+
+      await toggleAll.setChecked(true)
+      await expect(completed).toHaveCount(3)
+      await expect(toggleAll).toBeChecked()
+
+
+      await toggleAll.setChecked(false)
+      await expect(completed).toHaveCount(0)
+      await expect(counter).toHaveText("3 items left!")
+
+
+      await toggleAll.setChecked(false)
+      await expect(completed).toHaveCount(0)
+
+    })
+
+      
+  })
 
 })
 
