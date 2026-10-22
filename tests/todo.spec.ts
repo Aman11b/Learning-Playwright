@@ -423,6 +423,164 @@ test.describe("Todo app",()=>{
       
   })
 
+  // getByPlaceholder("text") finds an input by its placeholder attribute.
+  // getByLabel("text") finds a form control by its associated <label> text (or aria-label). It’s the best locator for forms, because it matches how a user identifies a field: by the name next to it.
+  // Playwright’s recommended priority is: 
+  // getByRole > getByLabel > getByPlaceholder > getByText > getByTestId. Test ids are the fallback for when nothing user-facing is stable.
+  // Both match as a case-insensitive substring by default. Add { exact: true } for a case-sensitive full match.
+
+
+  test.describe("Label and placeholder locators",()=>{
+    test("the new todo input can be found three different location",async({page})=>{
+      const byPlaceholder=page.getByPlaceholder("What needs to be done?")
+      const byLabel=page.getByLabel("New Todo Input")
+      const byTestId=page.getByTestId("header").getByRole("textbox")
+
+
+      await expect(byPlaceholder).toBeVisible()
+      await expect(byLabel).toBeVisible()
+
+      await byPlaceholder.fill(TODO_ITEMS[0])
+      await expect(byLabel).toHaveValue(TODO_ITEMS[0])
+      await expect(byTestId).toHaveValue(TODO_ITEMS[0])
+
+      await byLabel.press("Enter")
+      await expect(page.getByTestId("todo-item-label")).toHaveText([
+        TODO_ITEMS[0]
+      ])
+    })
+  })
+
+  // getByRole finds elements by their ARIA role, which most HTML tags have implicitly:
+  // The second argument filters by state and properties:
+  // name matches the accessible name (text, label or aria-label) as a case-insensitive substring. Add exact: true for a full match.
+  // checked: true | false filters checkboxes and radios.
+  // level: 1-6 filters headings.
+  // disabled, expanded, pressed and selected work the same way for the matching widgets.
+  // includeHidden: true includes elements that are hidden from the accessibility tree. By default, hidden elements are excluded from role queries.
+  test.describe("getByRole options",()=>{
+    test("role locator can filter by level,name and checked state",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+
+      await expect(page.getByRole("heading",{level:1})).toHaveText("todos")
+
+
+      const list = page.getByTestId("todo-list")
+      const checkboxes=list.getByRole("checkbox",{
+        checked:true
+      })
+      const unchecked=list.getByRole("checkbox",{checked:false})
+
+      await expect(checkboxes).toHaveCount(0)
+      await expect(unchecked).toHaveCount(3)
+
+      await list.getByRole("checkbox").first().check()
+
+      await expect(checkboxes).toHaveCount(1)
+      await expect(unchecked).toHaveCount(2)
+
+      const footer=page.getByTestId("footer")
+
+      await expect(footer.getByRole("link")).toHaveText([
+        "All","Active","Completed"
+      ])
+
+      await expect(footer.getByRole("link",{
+        name:"Active",exact:true
+      })).toHaveAttribute("href","#/active")
+    })
+  })
+
+  test.describe("filter hasNot and hasNotTest",()=>{
+    test("filter can excludes rows by descendant or by text",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+
+      const items=page.getByTestId("todo-item")
+      const checkbox=page.getByRole("checkbox",{checked:true})
+
+
+      await items.first().getByTestId("todo-item-toggle").check()
+
+      const doneItems=items.filter({has:checkbox})
+      await expect(doneItems).toHaveCount(1)
+      await expect(doneItems.getByTestId("todo-item-label")).toHaveText([
+        TODO_ITEMS[0]
+      ])
+
+      const activeItem=items.filter({hasNot:checkbox})
+      await expect(activeItem).toHaveCount(2)
+      await expect(activeItem.getByTestId("todo-item-label")).toHaveText([
+        TODO_ITEMS[1],
+        TODO_ITEMS[2]
+      ])
+
+      // hasNotText: rows whose text does NOT contain "TypeScript"
+      const notTypescript = items.filter({ hasNotText: "TypeScript" });
+      await expect(notTypescript.getByTestId("todo-item-label")).toHaveText([
+        TODO_ITEMS[0],
+        TODO_ITEMS[2],
+      ]);
+
+      // Chain: active AND not TypeScript -> only the last todo remains
+      const activeNotTypescript = activeItem.filter({
+        hasNotText: "TypeScript",
+      });
+      await expect(activeNotTypescript).toHaveCount(1);
+      await expect(activeNotTypescript).toContainText(TODO_ITEMS[2]);
+    })
+  })
+
+  // a.and(b) matches elements that satisfy both locators. Both conditions are checked on the same element, unlike chaining (a.getByX()), which searches inside a.
+  // a.or(b) matches elements that satisfy either locator. It’s useful when the UI can show one of two things (for example a banner or a dialog).
+  test.describe("and / or",()=>{
+    test("and() combines on one element, or() matches either",async({page})=>{
+      const footerOrToggleAll=page.getByTestId("footer").or(page.getByTestId("toggle-all"))
+
+
+      await expect(footerOrToggleAll).toHaveCount(0)
+      await addTodos(page,TODO_ITEMS);
+      await expect(footerOrToggleAll).toHaveCount(2)
+
+
+      const completedItems=page.getByTestId("todo-item").and(page.locator(".completed"))
+
+      await expect(completedItems).toHaveCount(0)
+      await page.getByTestId("todo-item-toggle").first().check()
+      await expect(completedItems).toHaveCount(1)
+
+    })
+  })
+
+  // locator.count() returns the number of current matches, and locator.all() returns an array with one locator per match. Neither waits. They snapshot whatever is on the page right now, so assert something first (like toHaveCount) to make sure the list has settled.
+  // allInnerTexts() returns the text of every match as a string[], which is handy for comparing a whole list.
+  // Strict mode: if a locator matches more than one element and you call a single-element action (click, fill, innerText) or assertion (toBeVisible, toHaveText("string")), Playwright throws a strict mode violation instead of guessing. This protects you from clicking the wrong element. The fix is to make the locator more specific with first(), nth(), filter() or a better scope.
+
+
+  test.describe("all, count and strict mode",()=>{
+    test("loop over matches, and multiple matches trip strict mode",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+
+      const labels=page.getByTestId("todo-item-label")
+      const toggles=page.getByTestId("todo-item-toggle")
+
+      await expect(labels).toHaveCount(3)
+      expect(await labels.count()).toBe(3)
+      expect(await labels.allInnerTexts()).toEqual(TODO_ITEMS)
+
+
+      for (const toggle of await toggles.all()){
+        await toggle.check()
+      }
+
+      await expect(page.locator("li.completed")).toHaveCount(3)
+
+      await expect(labels.click()).rejects.toThrow(/strict mode violation/)
+
+      await labels.first().click()
+    })
+  })
+
+
 })
 
 
