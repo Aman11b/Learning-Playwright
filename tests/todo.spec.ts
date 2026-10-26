@@ -580,6 +580,92 @@ test.describe("Todo app",()=>{
     })
   })
 
+  // This app uses a HashRouter, so each filter link only changes the URL hash (#/active, #/completed). The page doesn’t reload. React Router sees the hash change and re-renders.
+  // await expect(page).toHaveURL(...) asserts the current URL. It takes a string or a regex, and it auto-retries, so it’s safe right after a click.
+  // page.url() is different. It returns the URL right now, with no waiting. If you read it right after a click, the URL may not have changed yet, which makes the test flaky. Prefer toHaveURL.
+  // Regexes are handy for URLs: /#\/active$/ means “ends with #/active”. The $ anchor stops it from also matching something like #/active-old.
+
+
+  test.describe("Filter and URL",()=>{
+    test("footer links filter the list and update the URL",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+      await page.getByTestId("todo-item-toggle").first().check()
+
+
+      const labels=page.getByTestId("todo-item-label")
+      const footer=page.getByTestId("footer")
+      const link=(name:string)=>footer.getByRole("link",{
+        name,exact:true
+      })
+
+      await link("Active").click()
+      await expect(page).toHaveURL(/#\/active$/)
+      await expect(labels).toHaveText([TODO_ITEMS[1],TODO_ITEMS[2]])
+      await expect(link("Active")).toHaveClass(/selected/)
+
+      await link("Completed").click()
+      await expect(page).toHaveURL(/#\/completed$/)
+      await expect(labels).toHaveText([TODO_ITEMS[0]])
+      await expect(link("Completed")).toHaveClass(/selected/)
+
+      await link("All").click()
+      await expect(page).toHaveURL(/#\/$/)
+      await expect(labels).toHaveText(TODO_ITEMS)
+      await expect(link("All")).toHaveClass(/selected/)
+    })
+  })
+
+  // page.goBack() and page.goForward() do what the browser buttons do. If there’s no entry to go to, they return null instead of throwing, so don’t rely on the return value. Assert the URL and the list afterwards.
+  test.describe("History",()=>{
+    test("back and forword move between filters",async ({page})=>{
+      await addTodos(page,TODO_ITEMS)
+      await page.getByTestId("todo-item-toggle").first().check()
+
+      const labels=page.getByTestId("todo-item-label")
+      const link=(name:string)=>page.getByTestId("footer").getByRole("link",{name,exact:true})
+
+      await link("Active").click()
+      await link("Completed").click()
+      await expect(page).toHaveURL(/#\/completed$/)
+
+      await page.goBack()
+      await expect(page).toHaveURL(/#\/active$/)
+      await expect(labels).toHaveText([TODO_ITEMS[1],TODO_ITEMS[2]])
+
+      await page.goBack()
+      await expect(labels).toHaveText(TODO_ITEMS)
+      await expect(link("All")).toHaveClass(/selected/)
+
+      await page.goForward()
+      await expect(page).toHaveURL(/#\/active$/)
+      await expect(labels).toHaveCount(2)
+    })
+  })
+
+  // page.goto("/#/completed") opens a filter URL directly, which is how a user lands there from a bookmark or shared link. Our beforeEach already loaded /, and a hash-only change doesn’t reload the page, but it still triggers the router.
+  // page.reload() is the browser’s refresh button. The URL stays, but all JavaScript state is lost.
+
+  test.describe("Direct URL and reload",()=>{
+    test("a hash URL applies the filter, and reload wipes the todos",async ({page})=>{
+      const labels=page.getByTestId("todo-item-label")
+      const footer=page.getByTestId("footer")
+
+      await page.goto("/#/completed")
+      await addTodos(page,[TODO_ITEMS[0]])
+
+      await expect(footer).toBeVisible()
+      await expect(footer.getByText(/left!/)).toHaveText("1 item left!")
+      await expect(labels).toHaveCount(0)
+      await expect(
+        footer.getByRole("link",{name:"Completed",exact:true}),
+      ).toHaveClass(/selected/)
+
+      await page.reload()
+      await expect(page).toHaveURL(/#\/completed$/)
+      await expect(footer).toBeHidden()
+    })
+  })
+
 
 })
 
