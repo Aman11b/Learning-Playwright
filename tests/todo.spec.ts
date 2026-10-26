@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { count } from "node:console";
+import path = require("node:path");
+import { todo } from "node:test";
 import { Await } from "react-router-dom";
 
 // { page } extracts the page fixture from Playwright's test context. Playwright manages the browser context and page lifecycle for you.
@@ -665,6 +667,70 @@ test.describe("Todo app",()=>{
       await expect(footer).toBeHidden()
     })
   })
+
+
+  test.describe("Validation",()=>{
+    test("Input needs at least 2characters after trimming",async ({page})=>{
+      const todoInput=page.getByTestId("header").getByRole("textbox")
+      const labels=page.getByTestId("todo-item-label")
+
+      for (const rejected of ["a","    ",",","  a   "]){
+        await todoInput.fill(rejected)
+        await todoInput.press("Enter")
+        await expect(todoInput).toHaveValue(rejected)
+      }
+      await expect(labels).toHaveCount(0)
+
+
+      await todoInput.fill("ab")
+      await todoInput.press("Enter")
+      await expect(labels).toHaveText(["ab"])
+
+
+      await todoInput.fill("    padded todo    ")
+      await todoInput.press("Enter")
+      await expect(labels).toHaveText(["ab","padded todo"])
+      expect(await labels.nth(1).textContent()).toBe("padded todo")
+    })
+  })
+
+  test.describe("Special characters",()=>{
+    test("markup is not injected, but title show double-escaped (known bug)",async({page})=>{
+      await addTodos(page, ["<b>bold</b>", "Tom & Jerry"]);
+
+      const labels=page.getByTestId("todo-item-label")
+
+      await expect(page.getByTestId("todo-list").locator("b")).toHaveCount(0)
+
+
+      await expect(labels).toHaveText([
+        "&lt;b&gt;bold&lt;&#x2F;b&gt;",
+        "Tom &amp; Jerry",
+      ])
+    })
+  })
+
+  test.describe("Data-driven: sanitize",()=>{{
+    const cases = [
+      { name: "plain text", typed: "plain text", shown: "plain text" },
+      { name: "ampersand", typed: "a & b", shown: "a &amp; b" },
+      { name: "less-than", typed: "a < b", shown: "a &lt; b" },
+      { name: "greater-than", typed: "a > b", shown: "a &gt; b" },
+      { name: "double quote", typed: 'say "hi"', shown: "say &quot;hi&quot;" },
+      { name: "apostrophe", typed: "it's ok", shown: "it&#x27;s ok" },
+      { name: "slash", typed: "a/b", shown: "a&#x2F;b" },
+    ];
+
+    for(const {name,typed,shown} of cases){
+      test(`displays ${name} (${typed})`,async ({page})=>{
+        await addTodos(page,[typed])
+
+
+        await expect(page.getByTestId("todo-item-label")).toHaveText([shown])
+      })
+
+    }
+  }})
 
 
 })
